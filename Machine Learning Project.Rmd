@@ -1,0 +1,155 @@
+---
+title: "Machine Learning on Human Activity Recognition"
+author: "yc"
+date: "June 20, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Summary
+This project is about Human Activity Recognition
+
+## Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. 
+
+## Goal of this project
+The goal for this project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. Any of the other variables may be used to predict with. The accelerometers variables on the belt, forearm, arm, and dumbell are used to predict. This document contains: - how the model is built - the cross validation - expected out of sample error - prediction of 20 different test cases
+
+## Weight Lifting Exercises Dataset
+This human activity recognition research has traditionally focused on discriminating between different activities, i.e. to predict "which" activity was performed at a specific point in time (like with the Daily Living Activities dataset above). The approach we propose for the Weight Lifting Exercises dataset is to investigate "how (well)" an activity was performed by the wearer. The "how (well)" investigation has only received little attention so far, even though it potentially provides useful information for a large variety of applications,such as sports training.
+
+In this work (see the paper) we first define quality of execution and investigate three aspects that pertain to qualitative activity recognition: the problem of specifying correct execution, the automatic and robust detection of execution mistakes, and how to provide feedback on the quality of execution to the user. We tried out an on-body sensing approach (dataset here), but also an "ambient sensing approach" (by using Microsoft Kinect - dataset still unavailable)
+
+Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+
+Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes. Participants were supervised by an experienced weight lifter to make sure the execution complied to the manner they were supposed to simulate. The exercises were performed by six male participants aged between 20-28 years, with little weight lifting experience. We made sure that all participants could easily simulate the mistakes in a safe and controlled manner by using a relatively light dumbbell (1.25kg).
+
+## 2 type of dataset
+The project assignment includes two data files (in csv format)
+1. Training data: pml-training.csv
+2. Test data: pml-testing.csv
+
+# Import training dataset and apply data cleansing on "NA" and "#DIV/0!"
+```{r}
+pml_training_data = read.table("C:/Users/yckoong/Downloads/pml-training.csv", 
+                               header = TRUE, sep = ",", 
+                               na.strings = c("NA", "#DIV/0!"))
+dim(pml_training_data)
+```
+
+The dataframe has 19622 rows (observations) and 160 columns (variables). Most of the variables (152 out of 160) correspond to sensor readings for one of the four sensors. Those sensor-reading variable names (columns 8 to 159) include one of the following strings to identify the corresponding sensor:
+
+_belt   _arm   _dumbbell   _forearm
+
+The last column in the data frame (column 160) contains the values A to E of the classe variable that indicates the execution type of the exercise.
+
+## Restricting the Variables to Sensor-related Ones.
+Thus, the data in the first seven columns are not sensor readings. For the prediction purposes of this analysis, we will remove the data in those columns from the data frame (using grep to select the sensor-related columns).
+
+```{r}
+sensorColumns = grep(pattern = "_belt|_arm|_dumbbell|_forearm", names(pml_training_data))
+length(sensorColumns)
+```
+
+```{r}
+data = pml_training_data[, c(sensorColumns,160)]
+dim(data)
+```
+
+
+## Handling NA Values
+The selected sensor data columns still include many variables whose values are NA for almost all obervations. To remove those variables we do the following:
+
+```{r}
+missingData = is.na(data)
+omitColumns = which(colSums(missingData) > 19000)
+data = data[, -omitColumns]
+dim(data)
+```
+
+As you can see, only 53 predictor variables (plus classe) remain in the data set. Next we check that the resulting data frame has no missing values with:
+
+```{r}
+table(complete.cases(data))
+```
+
+All of the remaining predictor variables are of numeric type:
+```{r}
+table(sapply(data[1,], class))
+```
+
+## Data Splitting and Discussion of Preprocessing.
+Following the usual practice in Machine Learning, we will split our data into a training data set (75% of the total cases) and a testing data set (with the remaining cases; the latter should not be confused with the data in the pml-testing.csv file). This will allow us to estimate the out of sample error of our predictor. We will use the caret package for this purpose, and we begin by setting the seed to ensure reproducibility.
+
+```{r}
+set.seed(2014)
+library(caret)
+```
+
+```{r}
+inTrain <- createDataPartition(y=data$classe, p=0.75, list=FALSE)
+
+training <- data[inTrain,]
+dim(training)
+```
+
+```{r}
+testing <- data[-inTrain,]
+dim(testing)
+```
+
+## Fitting a model
+We fit a predictive model for activity recognition using Random Forest algorithm because it automatically selects important variables and is robust to correlated covariates & outliers in general. We will use 5-fold cross validation when applying the algorithm.
+
+```{r}
+library(randomForest)
+fitRf <- train(classe ~ ., data=training, method="rf", trControl=trainControl(method="cv", 5), ntree=250)
+fitRf
+```
+
+
+## Applying the Model to the Testing dataset.
+After training the predictor we use it on the testing dataset we constructed before, to get an estimate of its out of sample error.
+
+```{r}
+predictRf <- predict(fitRf, testing)
+confusionMatrix(testing$classe, predictRf)
+```
+
+
+```{r}
+accuracy <- postResample(predictRf, testing$classe)
+accuracy
+```
+
+```{r}
+oose <- 1 - as.numeric(confusionMatrix(testData$classe, predictRf)$overall[1])
+oose
+```
+So, the estimated accuracy of the model is 99.45, 99.3% and the estimated out-of-sample error is 0.55%.
+
+## Plots
+Correlation Matrix Visualization
+
+```{r}
+library(corrplot)
+corrPlot <- cor(training[, -length(names(training))])
+corrplot(corrPlot, method="color")
+```
+
+Tree Visualization
+
+```{r}
+library(rpart)
+library(rpart.plot)
+treeModel <- rpart(classe ~ ., data=training, method="class")
+prp(treeModel)
+```
+
+
+
+
+
